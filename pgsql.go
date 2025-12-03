@@ -3,11 +3,11 @@ package pgsql
 import (
 	"fmt"
 
-	"github.com/go-lynx/lynx/app/log"
+	"github.com/go-lynx/lynx-pgsql/conf"
+	"github.com/go-lynx/lynx-sql-sdk/base"
+	"github.com/go-lynx/lynx-sql-sdk/interfaces"
+	"github.com/go-lynx/lynx/log"
 	"github.com/go-lynx/lynx/plugins"
-	"github.com/go-lynx/lynx/plugins/sql/base"
-	"github.com/go-lynx/lynx/plugins/sql/interfaces"
-	"github.com/go-lynx/lynx/plugins/sql/pgsql/conf"
 
 	// PostgreSQL driver
 	_ "github.com/jackc/pgx/v5/stdlib"

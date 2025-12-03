@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-lynx/lynx-pgsql/conf"
 	"github.com/go-lynx/lynx/plugins"
-	"github.com/go-lynx/lynx/plugins/sql/pgsql/conf"
 )
 
 // mockRuntime is a mock implementation of plugins.Runtime for testing

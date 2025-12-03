@@ -5,10 +5,10 @@ import (
 	"fmt"
 
 	entsql "entgo.io/ent/dialect/sql"
-	"github.com/go-lynx/lynx/app"
-	"github.com/go-lynx/lynx/app/factory"
+	"github.com/go-lynx/lynx"
+	"github.com/go-lynx/lynx-sql-sdk/interfaces"
+	"github.com/go-lynx/lynx/pkg/factory"
 	"github.com/go-lynx/lynx/plugins"
-	"github.com/go-lynx/lynx/plugins/sql/interfaces"
 )
 
 // init function registers the PostgreSQL client plugin to the global plugin factory
@@ -20,7 +20,7 @@ func init() {
 
 // GetDB gets the database connection from the PostgreSQL plugin
 func GetDB() (*sql.DB, error) {
-	plugin := app.Lynx().GetPluginManager().GetPlugin(pluginName)
+	plugin := lynx.Lynx().GetPluginManager().GetPlugin(pluginName)
 	if plugin == nil {
 		return nil, fmt.Errorf("plugin %s not found", pluginName)
 	}
@@ -32,7 +32,7 @@ func GetDB() (*sql.DB, error) {
 
 // GetDialect gets the database dialect
 func GetDialect() string {
-	plugin := app.Lynx().GetPluginManager().GetPlugin(pluginName)
+	plugin := lynx.Lynx().GetPluginManager().GetPlugin(pluginName)
 	if plugin == nil {
 		return ""
 	}
@@ -44,7 +44,7 @@ func GetDialect() string {
 
 // IsConnected checks if the database is connected
 func IsConnected() bool {
-	plugin := app.Lynx().GetPluginManager().GetPlugin(pluginName)
+	plugin := lynx.Lynx().GetPluginManager().GetPlugin(pluginName)
 	if plugin == nil {
 		return false
 	}
@@ -56,7 +56,7 @@ func IsConnected() bool {
 
 // CheckHealth performs health check
 func CheckHealth() error {
-	plugin := app.Lynx().GetPluginManager().GetPlugin(pluginName)
+	plugin := lynx.Lynx().GetPluginManager().GetPlugin(pluginName)
 	if plugin == nil {
 		return fmt.Errorf("plugin %s not found", pluginName)
 	}

@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/go-kratos/kratos/v2/config"
-	"github.com/go-lynx/lynx/app"
+	"github.com/go-lynx/lynx"
+	"github.com/go-lynx/lynx-pgsql/conf"
 	"github.com/go-lynx/lynx/plugins"
-	"github.com/go-lynx/lynx/plugins/sql/pgsql/conf"
 )
 
 // TestPostgreSQLIntegration tests PostgreSQL plugin with real database connection
@@ -264,7 +264,7 @@ func createTestRuntime(t *testing.T) plugins.Runtime {
 	}
 
 	// Create runtime
-	rt := app.NewTypedRuntimePlugin()
+	rt := lynx.NewTypedRuntimePlugin()
 	rt.SetConfig(mockConfig)
 
 	return rt
@@ -327,4 +327,3 @@ func (m *mockConfig) Watch(key string, o config.Observer) error {
 func (m *mockConfig) Close() error {
 	return nil
 }
-
