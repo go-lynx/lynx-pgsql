@@ -7,7 +7,7 @@ toolchain go1.25.3
 require (
 	entgo.io/ent v0.14.5
 	github.com/go-kratos/kratos/v2 v2.9.1
-	github.com/go-lynx/lynx v1.5.0
+	github.com/go-lynx/lynx v1.5.2
 	github.com/go-lynx/lynx-sql-sdk v1.5.0
 	github.com/jackc/pgx/v5 v5.7.5
 	github.com/prometheus/client_golang v1.23.0
