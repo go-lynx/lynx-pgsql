@@ -1,3 +1,5 @@
+// Package pgsql provides a Lynx plugin for PostgreSQL using the pgx driver
+// via database/sql. Configure with config key "lynx.pgsql" (source required).
 package pgsql
 
 import (
@@ -19,6 +21,8 @@ const (
 	pluginVersion     = "v2.0.0"
 	pluginDescription = "pgsql client plugin for lynx framework"
 	confPrefix        = "lynx.pgsql"
+	// pluginPriority is the startup order relative to other plugins (higher runs later)
+	pluginPriority = 101
 )
 
 // DBPgsqlClient represents PostgreSQL client plugin instance
@@ -53,37 +57,43 @@ func NewPgsqlClient() *DBPgsqlClient {
 		pluginDescription,
 		pluginVersion,
 		confPrefix,
-		101,
+		pluginPriority,
 		config,
 	)
 
 	return c
 }
 
-// InitializeResources loads protobuf configuration and initializes resources
+// InitializeResources loads protobuf configuration and initializes resources.
+// We set p.config from proto first; base.InitializeResources(rt) is then called and
+// will Scan(p.config) again—ensure your config source can fill interfaces.Config
+// (e.g. same keys as Config) so base validation passes and proto values are not lost.
 func (p *DBPgsqlClient) InitializeResources(rt plugins.Runtime) error {
-	// Load protobuf configuration to a temporary variable first
-	// This ensures we don't partially update p.pbConfig if loading fails
 	pbConfig := &conf.Pgsql{}
 	if err := rt.GetConfig().Value(confPrefix).Scan(pbConfig); err != nil {
 		return fmt.Errorf("failed to load PostgreSQL configuration: %w", err)
 	}
-
-	// Only update p.pbConfig after successful loading
 	p.pbConfig = pbConfig
 
-	// Update interfaces.Config from protobuf config
-	// This ensures atomic update - either all fields are updated or none
-	p.config.Driver = pbConfig.Driver
-	p.config.DSN = pbConfig.Source
-	if pbConfig.MinConn > 0 {
-		p.config.MaxIdleConns = int(pbConfig.MinConn)
+	if pbConfig.Source == "" {
+		return fmt.Errorf("postgresql source (DSN) is required")
 	}
+
+	// Apply proto to shared config before base runs (base may overwrite via Scan)
+	if pbConfig.Driver != "" {
+		p.config.Driver = pbConfig.Driver
+	}
+	p.config.DSN = pbConfig.Source
 	if pbConfig.MaxConn > 0 {
 		p.config.MaxOpenConns = int(pbConfig.MaxConn)
 	}
+	if pbConfig.MinConn > 0 {
+		p.config.MaxIdleConns = int(pbConfig.MinConn)
+	}
+	if p.config.MaxIdleConns > p.config.MaxOpenConns {
+		p.config.MaxIdleConns = p.config.MaxOpenConns
+	}
 
-	// Call parent initialization
 	return p.SQLPlugin.InitializeResources(rt)
 }
 
