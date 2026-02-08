@@ -103,14 +103,29 @@ func (pm *PrometheusMetrics) RecordTx(dur time.Duration, committed bool, config 
 	pm.TxDuration.With(l).Observe(dur.Seconds())
 }
 
-// Create PrometheusConfig from configuration
+// Create PrometheusConfig from configuration.
+// When pgsqlConf.Prometheus is set, namespace/subsystem/labels are taken from it.
 func createPrometheusConfig(pgsqlConf *conf.Pgsql) *PrometheusConfig {
-	// Default only configures metric semantics, does not involve HTTP exposure
-	return &PrometheusConfig{
+	cfg := &PrometheusConfig{
 		Namespace: "lynx",
 		Subsystem: "pgsql",
 		Labels:    make(map[string]string),
 	}
+	if pgsqlConf != nil && pgsqlConf.Prometheus != nil {
+		if pgsqlConf.Prometheus.Namespace != "" {
+			cfg.Namespace = pgsqlConf.Prometheus.Namespace
+		}
+		if pgsqlConf.Prometheus.Subsystem != "" {
+			cfg.Subsystem = pgsqlConf.Prometheus.Subsystem
+		}
+		if len(pgsqlConf.Prometheus.Labels) > 0 {
+			cfg.Labels = make(map[string]string, len(pgsqlConf.Prometheus.Labels))
+			for k, v := range pgsqlConf.Prometheus.Labels {
+				cfg.Labels[k] = v
+			}
+		}
+	}
+	return cfg
 }
 
 // PrometheusMetrics Prometheus monitoring metrics

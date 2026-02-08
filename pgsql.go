@@ -3,13 +3,20 @@
 package pgsql
 
 import (
+	"context"
+	"database/sql"
 	"fmt"
+	"time"
 
+	"github.com/XSAM/otelsql"
+	"github.com/go-lynx/lynx"
 	"github.com/go-lynx/lynx-pgsql/conf"
 	"github.com/go-lynx/lynx-sql-sdk/base"
 	"github.com/go-lynx/lynx-sql-sdk/interfaces"
 	"github.com/go-lynx/lynx/log"
 	"github.com/go-lynx/lynx/plugins"
+	"github.com/prometheus/client_golang/prometheus"
+	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 
 	// PostgreSQL driver
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -23,13 +30,17 @@ const (
 	confPrefix        = "lynx.pgsql"
 	// pluginPriority is the startup order relative to other plugins (higher runs later)
 	pluginPriority = 101
+	// tracerPluginName is the Lynx plugin name of lynx-tracer; when present we inject otelsql for tracing.
+	tracerPluginName = "tracer.server"
 )
 
 // DBPgsqlClient represents PostgreSQL client plugin instance
 type DBPgsqlClient struct {
 	*base.SQLPlugin
-	config   *interfaces.Config
-	pbConfig *conf.Pgsql // protobuf configuration
+	config            *interfaces.Config
+	pbConfig          *conf.Pgsql // protobuf configuration
+	prometheusMetrics *PrometheusMetrics
+	metricsCancel     context.CancelFunc // stop periodic pool stats update
 }
 
 // NewPgsqlClient creates a new PostgreSQL client plugin instance
@@ -44,6 +55,9 @@ func NewPgsqlClient() *DBPgsqlClient {
 		// Default health check settings
 		HealthCheckInterval: 30, // 30 seconds
 		HealthCheckQuery:    "SELECT 1",
+		// Production-ready: enable retry on connection failure
+		RetryEnabled:     true,
+		RetryMaxAttempts: 3,
 	}
 
 	c := &DBPgsqlClient{
@@ -89,12 +103,52 @@ func (p *DBPgsqlClient) InitializeResources(rt plugins.Runtime) error {
 	}
 	if pbConfig.MinConn > 0 {
 		p.config.MaxIdleConns = int(pbConfig.MinConn)
+		p.config.WarmupEnabled = true
+		p.config.WarmupConns = int(pbConfig.MinConn)
+	}
+	if pbConfig.MaxIdleConn > 0 {
+		p.config.MaxIdleConns = int(pbConfig.MaxIdleConn)
+		if p.config.WarmupConns == 0 {
+			p.config.WarmupEnabled = true
+			p.config.WarmupConns = int(pbConfig.MaxIdleConn)
+		}
 	}
 	if p.config.MaxIdleConns > p.config.MaxOpenConns {
 		p.config.MaxIdleConns = p.config.MaxOpenConns
 	}
+	if p.config.WarmupConns > p.config.MaxOpenConns {
+		p.config.WarmupConns = p.config.MaxOpenConns
+	}
+	if pbConfig.MaxLifeTime != nil {
+		p.config.ConnMaxLifetime = int(pbConfig.MaxLifeTime.AsDuration().Seconds())
+	}
+	if pbConfig.MaxIdleTime != nil {
+		p.config.ConnMaxIdleTime = int(pbConfig.MaxIdleTime.AsDuration().Seconds())
+	}
 
-	return p.SQLPlugin.InitializeResources(rt)
+	// When lynx-tracer plugin is present, open DB via otelsql so every query gets a span in the same trace.
+	if lynx.Lynx() != nil && lynx.Lynx().GetPluginManager().GetPlugin(tracerPluginName) != nil {
+		p.config.OpenDBFunc = func(driver, dsn string) (*sql.DB, error) {
+			return otelsql.Open(driver, dsn,
+				otelsql.WithAttributes(semconv.DBSystemPostgreSQL),
+			)
+		}
+		log.Infof("pgsql: lynx-tracer detected, database operations will be traced automatically")
+	}
+
+	if err := p.SQLPlugin.InitializeResources(rt); err != nil {
+		return err
+	}
+
+	// Wire Prometheus metrics when prometheus config is present
+	if p.pbConfig.Prometheus != nil {
+		pmConfig := createPrometheusConfig(p.pbConfig)
+		p.prometheusMetrics = NewPrometheusMetrics(pmConfig)
+		adapter := newPgsqlMetricsAdapter(p.prometheusMetrics, p.pbConfig)
+		p.SQLPlugin.SetMetricsRecorder(adapter)
+	}
+
+	return nil
 }
 
 // StartupTasks initializes database connection
@@ -105,13 +159,57 @@ func (p *DBPgsqlClient) StartupTasks() error {
 		return err
 	}
 
+	// When Prometheus is enabled, periodically push connection pool stats to metrics
+	if p.prometheusMetrics != nil {
+		ctx, cancel := context.WithCancel(context.Background())
+		p.metricsCancel = cancel
+		go p.runPoolStatsUpdater(ctx)
+	}
+
 	log.Infof("pgsql database successfully initialized with connection pool: max_open=%d, max_idle=%d",
 		p.config.MaxOpenConns, p.config.MaxIdleConns)
 	return nil
 }
 
+// runPoolStatsUpdater periodically updates Prometheus connection pool metrics
+func (p *DBPgsqlClient) runPoolStatsUpdater(ctx context.Context) {
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if p.prometheusMetrics != nil && p.SQLPlugin != nil && p.SQLPlugin.IsConnected() {
+				stats := p.SQLPlugin.GetStats()
+				if stats != nil {
+					p.prometheusMetrics.UpdateMetrics(stats, p.pbConfig)
+				}
+			}
+		}
+	}
+}
+
 // CleanupTasks gracefully closes database connection
 func (p *DBPgsqlClient) CleanupTasks() error {
+	if p.metricsCancel != nil {
+		p.metricsCancel()
+		p.metricsCancel = nil
+	}
 	log.Infof("closing pgsql database connection")
 	return p.SQLPlugin.CleanupTasks()
+}
+
+// GetConfig returns the current database config (read-only). May be nil if plugin not initialized.
+func (p *DBPgsqlClient) GetConfig() *interfaces.Config {
+	return p.config
+}
+
+// GetMetricsGatherer returns the Prometheus Gatherer for this plugin's metrics, or nil if Prometheus is not enabled.
+// The application can merge this with the default registry when exposing /metrics.
+func (p *DBPgsqlClient) GetMetricsGatherer() prometheus.Gatherer {
+	if p.prometheusMetrics == nil {
+		return nil
+	}
+	return p.prometheusMetrics.GetGatherer()
 }

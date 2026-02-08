@@ -6,9 +6,11 @@ import (
 
 	entsql "entgo.io/ent/dialect/sql"
 	"github.com/go-lynx/lynx"
+	"github.com/go-lynx/lynx-sql-sdk/base"
 	"github.com/go-lynx/lynx-sql-sdk/interfaces"
 	"github.com/go-lynx/lynx/pkg/factory"
 	"github.com/go-lynx/lynx/plugins"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // init function registers the PostgreSQL client plugin to the global plugin factory
@@ -77,4 +79,42 @@ func GetDriver() (*entsql.Driver, error) {
 		return nil, fmt.Errorf("database connection is nil")
 	}
 	return entsql.OpenDB(GetDialect(), db), nil
+}
+
+// GetStats returns connection pool statistics from the pgsql plugin, or nil if the plugin is not loaded.
+func GetStats() *base.ConnectionPoolStats {
+	plugin := lynx.Lynx().GetPluginManager().GetPlugin(pluginName)
+	if plugin == nil {
+		return nil
+	}
+	if client, ok := plugin.(*DBPgsqlClient); ok {
+		return client.SQLPlugin.GetStats()
+	}
+	return nil
+}
+
+// GetConfig returns the current pgsql plugin config, or nil if the plugin is not loaded or not *DBPgsqlClient.
+// Config is read-only; do not modify.
+func GetConfig() *interfaces.Config {
+	plugin := lynx.Lynx().GetPluginManager().GetPlugin(pluginName)
+	if plugin == nil {
+		return nil
+	}
+	if client, ok := plugin.(*DBPgsqlClient); ok {
+		return client.GetConfig()
+	}
+	return nil
+}
+
+// GetMetricsGatherer returns the Prometheus Gatherer for the pgsql plugin, or nil if the plugin is not loaded or Prometheus is not enabled.
+// Use this to merge pgsql metrics into your /metrics endpoint, e.g. with prometheus.Gatherers.
+func GetMetricsGatherer() prometheus.Gatherer {
+	plugin := lynx.Lynx().GetPluginManager().GetPlugin(pluginName)
+	if plugin == nil {
+		return nil
+	}
+	if client, ok := plugin.(*DBPgsqlClient); ok {
+		return client.GetMetricsGatherer()
+	}
+	return nil
 }

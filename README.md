@@ -16,6 +16,15 @@ This is a PgSQL database connection plugin for the Lynx framework, providing com
 8. **Detailed Logging**: Provides detailed debugging and monitoring logs
 9. **Statistics**: Provides connection pool statistics
 10. **Status Query**: Provides connection status query interface
+11. **Tracing**: When the [lynx-tracer](https://github.com/go-lynx/lynx-tracer) plugin is loaded, DB operations are automatically traced (OpenTelemetry); each query/exec appears as a child span in the same trace as the request.
+
+## Tracing (lynx-tracer integration)
+
+If your application loads the **lynx-tracer** plugin (e.g. `tracer.server`), the pgsql plugin detects it and **automatically** opens the database connection through [otelsql](https://github.com/XSAM/otelsql). Every `QueryContext` / `ExecContext` / `BeginTx` etc. will then create a span under the current trace context, so you see DB latency and errors in the same trace as your HTTP/gRPC handler in Jaeger, Zipkin, or any OTLP backend.
+
+- **No extra config**: Just register both `lynx-tracer` and `lynx-pgsql`; no pgsql config needed for tracing.
+- **No tracer**: If lynx-tracer is not loaded, pgsql uses a normal connection (no tracing overhead).
+- **Requires**: [lynx-sql-sdk](https://github.com/go-lynx/lynx-sql-sdk) with `OpenDBFunc` support (optional driver wrapper). When using the repo from source, a `replace` in `go.mod` for the local sql-sdk is used so this works before a new SDK release.
 
 ## Configuration Guide
 
@@ -24,7 +33,7 @@ This is a PgSQL database connection plugin for the Lynx framework, providing com
 ```yaml
 lynx:
   pgsql:
-    driver: "postgres"
+    driver: "pgx"
     source: "postgres://username:password@host:port/database?sslmode=disable"
     min_conn: 10
     max_conn: 50
@@ -37,12 +46,14 @@ lynx:
 
 | Parameter | Type | Default Value | Description |
 |-----------|------|---------------|-------------|
-| `driver` | string | "postgres" | Database driver name |
-| `source` | string | "postgres://admin:123456@127.0.0.1:5432/demo?sslmode=disable" | Database connection string |
-| `min_conn` | int | 10 | Minimum number of connections (idle connections) |
-| `max_conn` | int | 20 | Maximum number of connections |
-| `max_idle_time` | duration | "10s" | Maximum idle time for connections |
-| `max_life_time` | duration | "300s" | Maximum lifetime for connections |
+| `driver` | string | "pgx" | Database driver name (use `pgx` for this plugin) |
+| `source` | string | required | Database connection string (DSN) |
+| `min_conn` | int | 5 | Minimum number of idle connections; enables pool warmup when set |
+| `max_conn` | int | 25 | Maximum number of open connections |
+| `max_idle_conn` | int | 0 | Maximum idle connections (overrides min_conn for idle cap when set) |
+| `max_idle_time` | duration | "300s" | Maximum idle time for connections |
+| `max_life_time` | duration | "3600s" | Maximum lifetime for connections |
+| `prometheus` | object | nil | When set, enables Prometheus metrics (namespace/subsystem/labels) |
 
 ### Connection String Format
 
@@ -118,23 +129,34 @@ if pgsql.IsConnected() {
 ### 5. Getting Configuration Information
 
 ```go
-// Get current configuration
+// Get current configuration (read-only)
 config := pgsql.GetConfig()
 if config != nil {
-    log.Infof("Current config: driver=%s, max_conn=%d", 
-        config.Driver, config.MaxConn)
+    log.Infof("Current config: driver=%s, max_open_conns=%d",
+        config.Driver, config.MaxOpenConns)
 }
 ```
 
 
 ### 6. Prometheus Monitoring
 
-```go
-// Get Prometheus metrics handler
-handler := pgsql.GetPrometheusHandler()
+Enable Prometheus by adding a `prometheus` block to your `lynx.pgsql` config (see below). Then merge the plugin's metrics into your `/metrics` endpoint:
 
-// Register metrics endpoint in HTTP server
-http.Handle("/metrics", handler)
+```go
+import (
+    "net/http"
+    "github.com/go-lynx/lynx-pgsql"
+    "github.com/prometheus/client_golang/prometheus"
+    "github.com/prometheus/client_golang/prometheus/promhttp"
+)
+
+// Merge pgsql metrics with default registry when exposing /metrics
+var gatherers prometheus.Gatherers
+if g := pgsql.GetMetricsGatherer(); g != nil {
+    gatherers = append(gatherers, g)
+}
+gatherers = append(gatherers, prometheus.DefaultGatherer)
+http.Handle("/metrics", promhttp.HandlerFor(gatherers, promhttp.HandlerOpts{}))
 ```
 
 
@@ -142,19 +164,16 @@ http.Handle("/metrics", handler)
 
 ### Enabling Monitoring
 
-Enable Prometheus monitoring in the configuration file:
+Add a `prometheus` block under `lynx.pgsql` to enable metrics (connection pool, health check, connect attempts, etc.). Metrics are exposed via `pgsql.GetMetricsGatherer()` and merged into your app's `/metrics` endpoint.
 
 ```yaml
 lynx:
   pgsql:
-    driver: "postgres"
+    driver: "pgx"
     source: "postgres://user:pass@localhost:5432/dbname"
     min_conn: 10
     max_conn: 50
     prometheus:
-      enabled: true
-      metrics_path: "/metrics"
-      metrics_port: 9090
       namespace: "lynx"
       subsystem: "pgsql"
       labels:
@@ -193,14 +212,11 @@ The plugin provides the following Prometheus metrics:
 
 ### Accessing Monitoring Metrics
 
-After starting the application, you can access monitoring metrics in the following ways:
+After starting the application and registering `GetMetricsGatherer()` with your HTTP `/metrics` handler, access metrics at your app's metrics endpoint:
 
 ```bash
-# Access metrics endpoint
-curl http://localhost:9090/metrics
-
-# View specific metrics
-curl http://localhost:9090/metrics | grep lynx_pgsql
+# Replace with your app's metrics host and port
+curl http://localhost:8080/metrics | grep lynx_pgsql
 ```
 
 
@@ -259,15 +275,15 @@ You can create Grafana dashboards to visualize monitoring metrics:
 
 The plugin provides the following statistics:
 
-- [MaxOpenConnections](file:///Users/claire/GolandProjects/lynx/lynx/plugins/db/pgsql/prometheus.go#L116-L116): Maximum open connections
-- [OpenConnections](file:///Users/claire/GolandProjects/lynx/lynx/plugins/db/pgsql/prometheus.go#L117-L117): Current open connections
-- [InUse](file:///Users/claire/GolandProjects/lynx/lynx/plugins/db/pgsql/pgsql.go#L63-L63): Connections in use
-- [Idle](file:///Users/claire/GolandProjects/lynx/lynx/plugins/db/pgsql/pgsql.go#L64-L64): Idle connections
-- [MaxIdleConnections](file:///Users/claire/GolandProjects/lynx/lynx/plugins/db/pgsql/prometheus.go#L120-L120): Maximum idle connections
-- [WaitCount](file:///Users/claire/GolandProjects/lynx/lynx/plugins/db/pgsql/prometheus.go#L123-L123): Number of connection waits
-- [WaitDuration](file:///Users/claire/GolandProjects/lynx/lynx/plugins/db/pgsql/prometheus.go#L124-L124): Total time waiting for connections
-- [MaxIdleClosed](file:///Users/claire/GolandProjects/lynx/lynx/plugins/db/pgsql/prometheus.go#L127-L127): Number of connections closed due to idle timeout
-- [MaxLifetimeClosed](file:///Users/claire/GolandProjects/lynx/lynx/plugins/db/pgsql/prometheus.go#L128-L128): Number of connections closed due to lifetime expiration
+- **MaxOpenConnections**: Maximum open connections
+- **OpenConnections**: Current open connections
+- **InUse**: Connections in use
+- **Idle**: Idle connections
+- **MaxIdleConnections**: Maximum idle connections
+- **WaitCount**: Number of connection waits
+- **WaitDuration**: Total time waiting for connections
+- **MaxIdleClosed**: Connections closed due to idle timeout
+- **MaxLifetimeClosed**: Connections closed due to lifetime expiration
 
 ### Log Information
 
