@@ -137,13 +137,13 @@ type PrometheusMetrics struct {
 	IdleConnections    *prometheus.GaugeVec
 	MaxIdleConnections *prometheus.GaugeVec
 
-	// Wait metrics
-	WaitCount    *prometheus.CounterVec
-	WaitDuration *prometheus.CounterVec
+	// Wait metrics (Gauge: DBStats returns cumulative totals, we Set current value each tick to avoid double-counting)
+	WaitCount    *prometheus.GaugeVec
+	WaitDuration *prometheus.GaugeVec
 
-	// Connection close metrics
-	MaxIdleClosed     *prometheus.CounterVec
-	MaxLifetimeClosed *prometheus.CounterVec
+	// Connection close metrics (Gauge: cumulative totals from DBStats, Set each tick)
+	MaxIdleClosed     *prometheus.GaugeVec
+	MaxLifetimeClosed *prometheus.GaugeVec
 
 	// Health check metrics
 	HealthCheckTotal   *prometheus.CounterVec
@@ -245,9 +245,9 @@ func NewPrometheusMetrics(config *PrometheusConfig) *PrometheusMetrics {
 		labels,
 	)
 
-	// Wait metrics
-	metrics.WaitCount = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
+	// Wait metrics (Gauge: report cumulative total from DBStats via Set to avoid double-counting on periodic update)
+	metrics.WaitCount = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
 			Namespace: config.Namespace,
 			Subsystem: config.Subsystem,
 			Name:      "wait_count_total",
@@ -256,8 +256,8 @@ func NewPrometheusMetrics(config *PrometheusConfig) *PrometheusMetrics {
 		labels,
 	)
 
-	metrics.WaitDuration = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
+	metrics.WaitDuration = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
 			Namespace: config.Namespace,
 			Subsystem: config.Subsystem,
 			Name:      "wait_duration_seconds_total",
@@ -266,9 +266,9 @@ func NewPrometheusMetrics(config *PrometheusConfig) *PrometheusMetrics {
 		labels,
 	)
 
-	// Connection close metrics
-	metrics.MaxIdleClosed = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
+	// Connection close metrics (Gauge: cumulative totals from DBStats)
+	metrics.MaxIdleClosed = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
 			Namespace: config.Namespace,
 			Subsystem: config.Subsystem,
 			Name:      "max_idle_closed_total",
@@ -277,8 +277,8 @@ func NewPrometheusMetrics(config *PrometheusConfig) *PrometheusMetrics {
 		labels,
 	)
 
-	metrics.MaxLifetimeClosed = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
+	metrics.MaxLifetimeClosed = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
 			Namespace: config.Namespace,
 			Subsystem: config.Subsystem,
 			Name:      "max_lifetime_closed_total",
@@ -482,13 +482,13 @@ func (m *PrometheusMetrics) UpdateMetrics(stats *base.ConnectionPoolStats, confi
 	m.IdleConnections.With(labels).Set(float64(stats.Idle))
 	m.MaxIdleConnections.With(labels).Set(float64(stats.MaxIdleConnections))
 
-	// Update wait metrics
-	m.WaitCount.With(labels).Add(float64(stats.WaitCount))
-	m.WaitDuration.With(labels).Add(stats.WaitDuration.Seconds())
+	// Update wait metrics (cumulative from DBStats; use Set to avoid double-counting on each tick)
+	m.WaitCount.With(labels).Set(float64(stats.WaitCount))
+	m.WaitDuration.With(labels).Set(stats.WaitDuration.Seconds())
 
-	// Update connection close metrics
-	m.MaxIdleClosed.With(labels).Add(float64(stats.MaxIdleClosed))
-	m.MaxLifetimeClosed.With(labels).Add(float64(stats.MaxLifetimeClosed))
+	// Update connection close metrics (cumulative; Set current total)
+	m.MaxIdleClosed.With(labels).Set(float64(stats.MaxIdleClosed))
+	m.MaxLifetimeClosed.With(labels).Set(float64(stats.MaxLifetimeClosed))
 
 	// Update configuration metrics
 	if config != nil {
@@ -513,7 +513,7 @@ func (pm *PrometheusMetrics) RecordHealthCheck(success bool, config *conf.Pgsql)
 	}
 }
 
-// buildLabels Builds labels
+// buildLabels Builds labels (must include all label names used when creating the metric vectors, including config.Prometheus.Labels)
 func (pm *PrometheusMetrics) buildLabels(config *conf.Pgsql) prometheus.Labels {
 	labels := prometheus.Labels{
 		"instance": "pgsql",
@@ -524,6 +524,13 @@ func (pm *PrometheusMetrics) buildLabels(config *conf.Pgsql) prometheus.Labels {
 	if config != nil && config.Source != "" {
 		if dbName := pm.extractDatabaseName(config.Source); dbName != "" {
 			labels["database"] = dbName
+		}
+	}
+
+	// Merge user-defined labels so With(labels) has all dimensions expected by the vectors
+	if config != nil && config.Prometheus != nil && len(config.Prometheus.Labels) > 0 {
+		for k, v := range config.Prometheus.Labels {
+			labels[k] = v
 		}
 	}
 

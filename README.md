@@ -78,7 +78,7 @@ import (
     "entgo.io/ent/dialect/sql"
 )
 
-// Get database driver
+// Get database driver (call after Lynx and pgsql plugin are started)
 driver, err := pgsql.GetDriver()
 if err != nil {
     // Handle error
@@ -88,6 +88,18 @@ if err != nil {
 
 // Create client using ent
 client := ent.NewClient(ent.Driver(driver))
+```
+
+**When startup order is uncertain** (e.g. in goroutines or code that may run before the plugin is ready), use `WaitForDB` or `WaitForDriver` with a context so the call blocks until the plugin has provided a valid connection pool (Lynx initialized, plugin registered, and StartupTasks completed). If you need to ensure the database is actually reachable (e.g. before accepting traffic), use `WaitForDBConnected(ctx)` instead—it waits until `IsConnected()` is true or the context times out.
+
+```go
+ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+defer cancel()
+db, err := pgsql.WaitForDB(ctx)
+if err != nil {
+    return err
+}
+// use db (do not close it; the plugin owns the pool)
 ```
 
 

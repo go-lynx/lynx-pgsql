@@ -171,7 +171,8 @@ func (p *DBPgsqlClient) StartupTasks() error {
 	return nil
 }
 
-// runPoolStatsUpdater periodically updates Prometheus connection pool metrics
+// runPoolStatsUpdater periodically updates Prometheus connection pool metrics.
+// Updates even when not connected so dashboards show current state (e.g. zeros when DB is down).
 func (p *DBPgsqlClient) runPoolStatsUpdater(ctx context.Context) {
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
@@ -180,7 +181,7 @@ func (p *DBPgsqlClient) runPoolStatsUpdater(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if p.prometheusMetrics != nil && p.SQLPlugin != nil && p.SQLPlugin.IsConnected() {
+			if p.prometheusMetrics != nil && p.SQLPlugin != nil {
 				stats := p.SQLPlugin.GetStats()
 				if stats != nil {
 					p.prometheusMetrics.UpdateMetrics(stats, p.pbConfig)
