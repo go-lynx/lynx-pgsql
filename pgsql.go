@@ -25,7 +25,7 @@ import (
 // Plugin metadata
 const (
 	pluginName        = "pgsql.client"
-	pluginVersion     = "v2.0.0"
+	pluginVersion     = "v1.5.4"
 	pluginDescription = "pgsql client plugin for lynx framework"
 	confPrefix        = "lynx.pgsql"
 	// pluginPriority is the startup order relative to other plugins (higher runs later)
