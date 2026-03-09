@@ -31,7 +31,14 @@ func init() {
 
 // GetDB gets the database connection from the PostgreSQL plugin.
 // Lynx must be initialized and the pgsql plugin started before calling this.
+// The pool is validated (ping) before return when ensure_alive_before_handout is enabled (default);
+// on failure the plugin reconnects so the pool is not handed out when broken.
 func GetDB() (*sql.DB, error) {
+	return GetDBWithContext(context.Background())
+}
+
+// GetDBWithContext gets the database connection with context support (timeout/cancellation).
+func GetDBWithContext(ctx context.Context) (*sql.DB, error) {
 	if lynx.Lynx() == nil {
 		return nil, fmt.Errorf("lynx not initialized")
 	}
@@ -40,7 +47,23 @@ func GetDB() (*sql.DB, error) {
 		return nil, fmt.Errorf("plugin %s not found", pluginName)
 	}
 	if sqlPlugin, ok := plugin.(interfaces.SQLPlugin); ok {
-		return sqlPlugin.GetDB()
+		return sqlPlugin.GetDBWithContext(ctx)
+	}
+	return nil, fmt.Errorf("plugin %s is not a SQLPlugin", pluginName)
+}
+
+// GetValidatedConn returns a single connection from the pool that has been verified alive (Ping).
+// Use this when you need a connection guaranteed to be usable at handoff time. Caller must call conn.Close() when done.
+func GetValidatedConn(ctx context.Context) (*sql.Conn, error) {
+	if lynx.Lynx() == nil {
+		return nil, fmt.Errorf("lynx not initialized")
+	}
+	plugin := lynx.Lynx().GetPluginManager().GetPlugin(pluginName)
+	if plugin == nil {
+		return nil, fmt.Errorf("plugin %s not found", pluginName)
+	}
+	if sqlPlugin, ok := plugin.(interfaces.SQLPlugin); ok {
+		return sqlPlugin.GetValidatedConn(ctx)
 	}
 	return nil, fmt.Errorf("plugin %s is not a SQLPlugin", pluginName)
 }

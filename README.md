@@ -113,6 +113,22 @@ if err != nil {
 }
 ```
 
+### 2.1 Connection liveness (no dead connections to business)
+
+The plugin ensures the connection pool is not handed out when it is broken:
+
+- **GetDB / GetDBWithContext**: When `ensure_alive_before_handout` is enabled (default), the pool is pinged before return; on failure the plugin reconnects once so you never get a closed pool.
+- **Health check**: On first health-check failure the plugin reconnects immediately, replacing the pool so idle connections are not reused after the DB restarts or the network drops.
+- **GetValidatedConn**: For code that needs a single connection guaranteed to be alive at handoff time, use `GetValidatedConn(ctx)` and `defer conn.Close()` when done.
+
+```go
+conn, err := pgsql.GetValidatedConn(ctx)
+if err != nil {
+    return err
+}
+defer conn.Close()
+// use conn for one unit of work; it has been Ping'd and is alive
+```
 
 ### 3. Getting Connection Pool Statistics
 

@@ -26,6 +26,10 @@ lynx:
     # Maximum connection lifetime (connections exceeding this are closed and recreated)
     max_life_time: "300s"
 
+    # Optional: ensure pool is alive before handing out (default: true). When true, GetDB/GetValidatedConn
+    # validate the pool/connection so business never gets a closed or broken connection.
+    # ensure_alive_before_handout: true
+
 # Advanced configuration example
 #  lynx:
 #   pgsql:
