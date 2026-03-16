@@ -130,6 +130,35 @@ defer conn.Close()
 // use conn for one unit of work; it has been Ping'd and is alive
 ```
 
+### 2.2 Reconnection and caching (avoid "sql: database is closed")
+
+When **auto-reconnect** is enabled (default), the plugin may replace the internal connection pool after a disconnect. The **previous** `*sql.DB` (and any ent driver or client built from it) is then **closed**. If your app caches the result of `GetDB()` or `GetDriver()` in a long-lived struct (e.g. a global `Data` or `Repo` built at startup), that cached reference will become invalid after a reconnection and you will see **"sql: database is closed"** on the next query.
+
+**Recommended:**
+
+- **Do not cache** the return value of `GetDB()` / `GetDriver()` in a struct that lives for the whole process when auto-reconnect is on.
+- **Obtain the DB or driver at request scope**: call `GetDBWithContext(ctx)` or `GetDriver()` at the start of each HTTP/gRPC handler (or at the entry of your use case), and pass that DB/driver down for that request only. For ent, create the client from the driver inside the handler and use it only for that request.
+- Alternatively, inject a **provider** (e.g. a function that returns the current DB) and call it when you need a connection, so you always get the current pool after a reconnection.
+
+Example (request-scoped DB):
+
+```go
+// In your HTTP/gRPC handler or use case entry
+func (s *RegisterService) Register(ctx context.Context, req *pb.RegisterRequest) error {
+    db, err := pgsql.GetDBWithContext(ctx)
+    if err != nil {
+        return err
+    }
+    driver := entsql.OpenDB(pgsql.GetDialect(), db)
+    client := ent.NewClient(ent.Driver(driver))
+    defer client.Close()
+    // use client for this request only
+    return s.repoWithClient(client).FindUserByEmail(ctx, req.Email)
+}
+```
+
+If you must hold a long-lived ent client (e.g. for Wire DI), consider disabling auto-reconnect for that service, or accept that after a DB outage you may need to restart the process to get a valid pool again.
+
 ### 3. Getting Connection Pool Statistics
 
 ```go

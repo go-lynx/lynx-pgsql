@@ -33,6 +33,11 @@ func init() {
 // Lynx must be initialized and the pgsql plugin started before calling this.
 // The pool is validated (ping) before return when ensure_alive_before_handout is enabled (default);
 // on failure the plugin reconnects so the pool is not handed out when broken.
+//
+// When auto-reconnect is enabled, do not cache the returned *sql.DB in long-lived structs (e.g. Data/Repo
+// built at startup). After a reconnection the previous *sql.DB is closed; cached references will get
+// "sql: database is closed". Call GetDB/GetDBWithContext at the start of each request and use the result
+// only for that request, or inject a provider (e.g. GetDBWithContext) and call it when needed.
 func GetDB() (*sql.DB, error) {
 	return GetDBWithContext(context.Background())
 }
@@ -196,8 +201,11 @@ func CheckHealth() error {
 	return fmt.Errorf("plugin %s is not a SQLPlugin", pluginName)
 }
 
-// GetDriver gets the ent SQL driver from the PostgreSQL plugin
-// Returns an error if the database connection cannot be obtained
+// GetDriver gets the ent SQL driver from the PostgreSQL plugin.
+// Returns an error if the database connection cannot be obtained.
+// When auto-reconnect is enabled, do not cache the returned driver (or an ent.Client built from it) in
+// long-lived structs; after Reconnect() the underlying *sql.DB is closed. Obtain the driver at request
+// scope (e.g. call GetDriver in each handler and create ent.Client per request) or use a provider pattern.
 func GetDriver() (*entsql.Driver, error) {
 	db, err := GetDB()
 	if err != nil {
