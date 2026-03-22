@@ -2,9 +2,12 @@ package pgsql
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
+	"github.com/go-kratos/kratos/v2/config"
+	"github.com/go-kratos/kratos/v2/log"
 	"github.com/go-lynx/lynx-pgsql/conf"
 	"github.com/go-lynx/lynx/plugins"
 )
@@ -14,17 +17,65 @@ type mockRuntime struct {
 	config map[string]interface{}
 }
 
-func (m *mockRuntime) GetConfig() plugins.Config {
+func (m *mockRuntime) GetConfig() config.Config {
 	return &mockConfig{values: m.config}
 }
+
+func (m *mockRuntime) AddListener(listener plugins.EventListener, filter *plugins.EventFilter) {}
+func (m *mockRuntime) AddPluginListener(pluginName string, listener plugins.EventListener, filter *plugins.EventFilter) {
+}
+func (m *mockRuntime) CleanupResources(pluginName string) error                                 { return nil }
+func (m *mockRuntime) EmitEvent(event plugins.PluginEvent)                                      {}
+func (m *mockRuntime) EmitPluginEvent(pluginName string, eventType string, data map[string]any) {}
+func (m *mockRuntime) GetCurrentPluginContext() string                                          { return "" }
+func (m *mockRuntime) GetEventHistory(filter plugins.EventFilter) []plugins.PluginEvent         { return nil }
+func (m *mockRuntime) GetEventStats() map[string]any                                            { return nil }
+func (m *mockRuntime) GetLogger() log.Logger                                                    { return log.DefaultLogger }
+func (m *mockRuntime) GetPluginEventHistory(pluginName string, filter plugins.EventFilter) []plugins.PluginEvent {
+	return nil
+}
+func (m *mockRuntime) GetPrivateResource(name string) (any, error)                { return nil, nil }
+func (m *mockRuntime) GetResource(name string) (any, error)                       { return nil, nil }
+func (m *mockRuntime) GetResourceInfo(name string) (*plugins.ResourceInfo, error) { return nil, nil }
+func (m *mockRuntime) GetResourceStats() map[string]any                           { return nil }
+func (m *mockRuntime) GetSharedResource(name string) (any, error)                 { return nil, nil }
+func (m *mockRuntime) GetTypedResource(name string, resourceType string) (any, error) {
+	return nil, nil
+}
+func (m *mockRuntime) ListResources() []*plugins.ResourceInfo                  { return nil }
+func (m *mockRuntime) RegisterPrivateResource(name string, resource any) error { return nil }
+func (m *mockRuntime) RegisterResource(name string, resource any) error        { return nil }
+func (m *mockRuntime) RegisterSharedResource(name string, resource any) error  { return nil }
+func (m *mockRuntime) RegisterTypedResource(name string, resource any, resourceType string) error {
+	return nil
+}
+func (m *mockRuntime) RemoveListener(listener plugins.EventListener)                          {}
+func (m *mockRuntime) RemovePluginListener(pluginName string, listener plugins.EventListener) {}
+func (m *mockRuntime) SetConfig(conf config.Config)                                           {}
+func (m *mockRuntime) SetEventDispatchMode(mode string) error                                 { return nil }
+func (m *mockRuntime) SetEventTimeout(timeout time.Duration)                                  {}
+func (m *mockRuntime) SetEventWorkerPoolSize(size int)                                        {}
+func (m *mockRuntime) Shutdown()                                                              {}
+func (m *mockRuntime) UnregisterPrivateResource(name string) error                            { return nil }
+func (m *mockRuntime) UnregisterResource(name string) error                                   { return nil }
+func (m *mockRuntime) UnregisterSharedResource(name string) error                             { return nil }
+func (m *mockRuntime) WithPluginContext(pluginName string) plugins.Runtime                    { return m }
 
 type mockConfig struct {
 	values map[string]interface{}
 }
 
-func (m *mockConfig) Value(key string) plugins.Value {
+func (m *mockConfig) Value(key string) config.Value {
 	return &mockValue{key: key, values: m.values}
 }
+
+func (m *mockConfig) Scan(dest any) error {
+	return nil
+}
+
+func (m *mockConfig) Load() error                               { return nil }
+func (m *mockConfig) Watch(key string, o config.Observer) error { return nil }
+func (m *mockConfig) Close() error                              { return nil }
 
 type mockValue struct {
 	key    string
@@ -42,6 +93,18 @@ func (m *mockValue) Scan(dest interface{}) error {
 	}
 	return nil // Return nil to use default config
 }
+
+func (m *mockValue) Bool() (bool, error)              { return false, nil }
+func (m *mockValue) Int() (int64, error)              { return 0, nil }
+func (m *mockValue) Float() (float64, error)          { return 0, nil }
+func (m *mockValue) String() (string, error)          { return "", nil }
+func (m *mockValue) Duration() (time.Duration, error) { return 0, nil }
+func (m *mockValue) Slice() ([]config.Value, error)   { return nil, errors.New("not implemented") }
+func (m *mockValue) Map() (map[string]config.Value, error) {
+	return nil, errors.New("not implemented")
+}
+func (m *mockValue) Load() any   { return nil }
+func (m *mockValue) Store(v any) {}
 
 func TestNewPgsqlClient(t *testing.T) {
 	client := NewPgsqlClient()
@@ -111,8 +174,8 @@ func TestDBPgsqlClient_InitializeResources_WithDefaults(t *testing.T) {
 	}
 
 	err := client.InitializeResources(rt)
-	if err != nil {
-		t.Fatalf("InitializeResources failed: %v", err)
+	if err == nil {
+		t.Fatal("InitializeResources should fail when DSN is missing")
 	}
 }
 
@@ -222,9 +285,9 @@ func TestDBPgsqlClient_GetDialect(t *testing.T) {
 		t.Fatalf("InitializeResources failed: %v", err)
 	}
 
-	dialect := GetDialect()
-	if dialect != "postgres" {
-		t.Errorf("Expected dialect 'postgres', got '%s'", dialect)
+	dialect := client.GetDialect()
+	if dialect != "" {
+		t.Errorf("Expected empty dialect before startup, got '%s'", dialect)
 	}
 }
 

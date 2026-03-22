@@ -22,6 +22,8 @@ const (
 	waitForDBMaxInterval = 200 * time.Millisecond
 )
 
+type dbProvider struct{}
+
 // init function registers the PostgreSQL client plugin to the global plugin factory
 func init() {
 	factory.GlobalTypedFactory().RegisterPlugin(pluginName, confPrefix, func() plugins.Plugin {
@@ -57,6 +59,12 @@ func GetDBWithContext(ctx context.Context) (*sql.DB, error) {
 	return nil, fmt.Errorf("plugin %s is not a SQLPlugin", pluginName)
 }
 
+// GetProvider returns a stable provider for the current pgsql pool.
+// The provider does not hold a concrete *sql.DB; each call resolves the current pool so it remains valid after reconnect.
+func GetProvider() interfaces.DBProvider {
+	return dbProvider{}
+}
+
 // GetValidatedConn returns a single connection from the pool that has been verified alive (Ping).
 // Use this when you need a connection guaranteed to be usable at handoff time. Caller must call conn.Close() when done.
 func GetValidatedConn(ctx context.Context) (*sql.Conn, error) {
@@ -71,6 +79,18 @@ func GetValidatedConn(ctx context.Context) (*sql.Conn, error) {
 		return sqlPlugin.GetValidatedConn(ctx)
 	}
 	return nil, fmt.Errorf("plugin %s is not a SQLPlugin", pluginName)
+}
+
+func (dbProvider) DB(ctx context.Context) (*sql.DB, error) {
+	return GetDBWithContext(ctx)
+}
+
+func (dbProvider) ValidatedConn(ctx context.Context) (*sql.Conn, error) {
+	return GetValidatedConn(ctx)
+}
+
+func (dbProvider) Dialect() string {
+	return GetDialect()
 }
 
 // WaitForDB blocks until the pgsql plugin has provided a valid *sql.DB (i.e. Lynx initialized,
@@ -205,7 +225,7 @@ func CheckHealth() error {
 // Returns an error if the database connection cannot be obtained.
 // When auto-reconnect is enabled, do not cache the returned driver (or an ent.Client built from it) in
 // long-lived structs; after Reconnect() the underlying *sql.DB is closed. Obtain the driver at request
-// scope (e.g. call GetDriver in each handler and create ent.Client per request) or use a provider pattern.
+// scope (e.g. call GetDriver in each handler and create ent.Client per request) or use GetDriverProvider.
 func GetDriver() (*entsql.Driver, error) {
 	db, err := GetDB()
 	if err != nil {
@@ -215,6 +235,22 @@ func GetDriver() (*entsql.Driver, error) {
 		return nil, fmt.Errorf("database connection is nil")
 	}
 	return entsql.OpenDB(GetDialect(), db), nil
+}
+
+// GetDriverProvider returns a stable provider for ent SQL drivers.
+// The returned closure resolves the current pool on each call and should be preferred over caching GetDriver().
+func GetDriverProvider() func(ctx context.Context) (*entsql.Driver, error) {
+	provider := GetProvider()
+	return func(ctx context.Context) (*entsql.Driver, error) {
+		db, err := provider.DB(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get database connection: %w", err)
+		}
+		if db == nil {
+			return nil, fmt.Errorf("database connection is nil")
+		}
+		return entsql.OpenDB(provider.Dialect(), db), nil
+	}
 }
 
 // WaitForDriver blocks until the pgsql plugin is available (see WaitForDB), then returns GetDriver().
