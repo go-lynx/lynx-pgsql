@@ -10,6 +10,7 @@ import (
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/go-lynx/lynx-pgsql/conf"
 	"github.com/go-lynx/lynx/plugins"
+	"google.golang.org/protobuf/proto"
 )
 
 // mockRuntime is a mock implementation of plugins.Runtime for testing
@@ -86,7 +87,8 @@ func (m *mockValue) Scan(dest interface{}) error {
 	if val, ok := m.values[m.key]; ok {
 		if pbConfig, ok := dest.(*conf.Pgsql); ok {
 			if cfg, ok := val.(*conf.Pgsql); ok {
-				*pbConfig = *cfg
+				proto.Reset(pbConfig)
+				proto.Merge(pbConfig, cfg)
 				return nil
 			}
 		}

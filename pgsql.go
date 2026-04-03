@@ -4,11 +4,9 @@ package pgsql
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"time"
 
-	"github.com/XSAM/otelsql"
 	"github.com/go-lynx/lynx"
 	"github.com/go-lynx/lynx-pgsql/conf"
 	"github.com/go-lynx/lynx-sql-sdk/base"
@@ -16,7 +14,6 @@ import (
 	"github.com/go-lynx/lynx/log"
 	"github.com/go-lynx/lynx/plugins"
 	"github.com/prometheus/client_golang/prometheus"
-	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 
 	// PostgreSQL driver
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -25,12 +22,12 @@ import (
 // Plugin metadata
 const (
 	pluginName        = "pgsql.client"
-	pluginVersion     = "v1.6.0-beta"
+	pluginVersion     = "v1.5.4"
 	pluginDescription = "pgsql client plugin for lynx framework"
 	confPrefix        = "lynx.pgsql"
 	// pluginPriority is the startup order relative to other plugins (higher runs later)
 	pluginPriority = 101
-	// tracerPluginName is the Lynx plugin name of lynx-tracer; when present we inject otelsql for tracing.
+	// tracerPluginName is the Lynx plugin name of lynx-tracer.
 	tracerPluginName = "tracer.server"
 )
 
@@ -126,14 +123,10 @@ func (p *DBPgsqlClient) InitializeResources(rt plugins.Runtime) error {
 		p.config.ConnMaxIdleTime = int(pbConfig.MaxIdleTime.AsDuration().Seconds())
 	}
 
-	// When lynx-tracer plugin is present, open DB via otelsql so every query gets a span in the same trace.
+	// lynx-sql-sdk v1.5.0 does not expose OpenDBFunc, so automatic otelsql wrapping must wait
+	// for the sql-sdk line to roll forward again. Keep runtime detection to surface the limitation.
 	if lynx.Lynx() != nil && lynx.Lynx().GetPluginManager().GetPlugin(tracerPluginName) != nil {
-		p.config.OpenDBFunc = func(driver, dsn string) (*sql.DB, error) {
-			return otelsql.Open(driver, dsn,
-				otelsql.WithAttributes(semconv.DBSystemPostgreSQL),
-			)
-		}
-		log.Infof("pgsql: lynx-tracer detected, database operations will be traced automatically")
+		log.Warnf("pgsql: lynx-tracer detected, but sql-sdk v1.5.0 lacks OpenDBFunc; automatic DB tracing is disabled in the rollback line")
 	}
 
 	if err := p.SQLPlugin.InitializeResources(rt); err != nil {

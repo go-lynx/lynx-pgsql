@@ -6,13 +6,11 @@ toolchain go1.25.3
 
 require (
 	entgo.io/ent v0.14.5
-	github.com/XSAM/otelsql v0.41.0
 	github.com/go-kratos/kratos/v2 v2.9.1
-	github.com/go-lynx/lynx v1.6.0-beta
+	github.com/go-lynx/lynx v1.5.4
 	github.com/go-lynx/lynx-sql-sdk v1.5.0
 	github.com/jackc/pgx/v5 v5.7.5
 	github.com/prometheus/client_golang v1.23.0
-	go.opentelemetry.io/otel v1.40.0
 	google.golang.org/protobuf v1.36.10
 )
 
@@ -40,6 +38,7 @@ require (
 	github.com/prometheus/procfs v0.16.1 // indirect
 	github.com/rs/zerolog v1.34.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
+	go.opentelemetry.io/otel v1.40.0 // indirect
 	go.opentelemetry.io/otel/metric v1.40.0 // indirect
 	go.opentelemetry.io/otel/trace v1.40.0 // indirect
 	golang.org/x/crypto v0.46.0 // indirect
@@ -53,6 +52,3 @@ require (
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-// Use local sql-sdk when developing (contains OpenDBFunc for tracer integration)
-replace github.com/go-lynx/lynx-sql-sdk => ../lynx-sql-sdk

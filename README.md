@@ -44,16 +44,24 @@ lynx:
 
 ### Configuration Parameters
 
-| Parameter | Type | Default Value | Description |
-|-----------|------|---------------|-------------|
-| `driver` | string | "pgx" | Database driver name (use `pgx` for this plugin) |
-| `source` | string | required | Database connection string (DSN) |
-| `min_conn` | int | 5 | Minimum number of idle connections; enables pool warmup when set |
-| `max_conn` | int | 25 | Maximum number of open connections |
-| `max_idle_conn` | int | 0 | Maximum idle connections (overrides min_conn for idle cap when set) |
-| `max_idle_time` | duration | "300s" | Maximum idle time for connections |
-| `max_life_time` | duration | "3600s" | Maximum lifetime for connections |
-| `prometheus` | object | nil | When set, enables Prometheus metrics (namespace/subsystem/labels) |
+| Field | Proto Type | Default Value | Example | Notes |
+|-------|------------|---------------|---------|-------|
+| `driver` | `string` | `"pgx"` | `"pgx"` | PostgreSQL driver name used by this plugin. |
+| `source` | `string` | required | `"postgres://user:password@localhost:5432/app?sslmode=disable"` | PostgreSQL DSN. This field is mandatory. |
+| `min_conn` | `int32` | `0` | `5` | When greater than `0`, the plugin warms up that many idle connections. If omitted, the runtime keeps the plugin default idle pool size of `5` without warmup. |
+| `max_conn` | `int32` | `25` | `50` | Maximum number of open connections. |
+| `max_life_time` | `google.protobuf.Duration` | `"3600s"` | `"3600s"` | Maximum lifetime of a pooled connection. |
+| `max_idle_time` | `google.protobuf.Duration` | `"300s"` | `"300s"` | Maximum idle lifetime of a pooled connection. |
+| `max_idle_conn` | `int32` | `0` | `10` | Explicit idle connection cap. Overrides `min_conn` for idle pool sizing when set. |
+| `prometheus` | `PrometheusConfig` | `nil` | `{ namespace: "lynx", subsystem: "pgsql" }` | Enables plugin-local Prometheus metrics when the block is present. |
+
+#### `prometheus` sub-fields
+
+| Field | Proto Type | Default Value | Example | Notes |
+|-------|------------|---------------|---------|-------|
+| `prometheus.namespace` | `string` | `""` | `"lynx"` | Metric namespace prefix. |
+| `prometheus.subsystem` | `string` | `""` | `"pgsql"` | Metric subsystem name. |
+| `prometheus.labels` | `map<string,string>` | `{}` | `{ environment: "prod", service: "account-api" }` | Extra labels added to all exported metrics. |
 
 ### Connection String Format
 
