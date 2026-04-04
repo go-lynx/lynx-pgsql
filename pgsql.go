@@ -4,6 +4,7 @@ package pgsql
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -191,7 +192,11 @@ func (p *DBPgsqlClient) CleanupTasks() error {
 		p.metricsCancel = nil
 	}
 	log.Infof("closing pgsql database connection")
-	return p.SQLPlugin.CleanupTasks()
+	err := p.SQLPlugin.CleanupTasks()
+	if errors.Is(err, base.ErrAlreadyClosed) {
+		return nil
+	}
+	return err
 }
 
 // GetConfig returns the current database config (read-only). May be nil if plugin not initialized.

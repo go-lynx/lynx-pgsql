@@ -16,15 +16,15 @@ This is a PgSQL database connection plugin for the Lynx framework, providing com
 8. **Detailed Logging**: Provides detailed debugging and monitoring logs
 9. **Statistics**: Provides connection pool statistics
 10. **Status Query**: Provides connection status query interface
-11. **Tracing**: When the [lynx-tracer](https://github.com/go-lynx/lynx-tracer) plugin is loaded, DB operations are automatically traced (OpenTelemetry); each query/exec appears as a child span in the same trace as the request.
+11. **Tracing Boundary**: When [lynx-tracer](https://github.com/go-lynx/lynx-tracer) is present, the plugin detects it and logs the current rollback-line limitation instead of silently pretending DB spans are enabled.
 
 ## Tracing (lynx-tracer integration)
 
-If your application loads the **lynx-tracer** plugin (e.g. `tracer.server`), the pgsql plugin detects it and **automatically** opens the database connection through [otelsql](https://github.com/XSAM/otelsql). Every `QueryContext` / `ExecContext` / `BeginTx` etc. will then create a span under the current trace context, so you see DB latency and errors in the same trace as your HTTP/gRPC handler in Jaeger, Zipkin, or any OTLP backend.
+If your application loads the **lynx-tracer** plugin (e.g. `tracer.server`), the pgsql plugin detects it, but the current rollback line of [lynx-sql-sdk](https://github.com/go-lynx/lynx-sql-sdk) still lacks `OpenDBFunc`. That means this plugin does **not** wrap the pool with [otelsql](https://github.com/XSAM/otelsql) today, and raw DB operations are **not automatically traced**.
 
-- **No extra config**: Just register both `lynx-tracer` and `lynx-pgsql`; no pgsql config needed for tracing.
-- **No tracer**: If lynx-tracer is not loaded, pgsql uses a normal connection (no tracing overhead).
-- **Requires**: [lynx-sql-sdk](https://github.com/go-lynx/lynx-sql-sdk) with `OpenDBFunc` support (optional driver wrapper). When using the repo from source, a `replace` in `go.mod` for the local sql-sdk is used so this works before a new SDK release.
+- **What happens now**: pgsql logs a warning at initialization so the limitation is visible in production.
+- **No config workaround in this repo**: there is no `lynx.pgsql` switch that can enable automatic DB spans on the current sql-sdk line.
+- **How to get DB spans later**: upgrade to a sql-sdk release that restores `OpenDBFunc`, then re-enable the otelsql integration in plugin code.
 
 ## Configuration Guide
 

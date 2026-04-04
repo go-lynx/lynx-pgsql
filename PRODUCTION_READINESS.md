@@ -18,7 +18,7 @@ The plugin is suitable for production when the following conditions are met:
 | Retry             | Automatic retry on connection failure (enabled by default; retry count configurable). |
 | Health check      | Periodic health checks and active probing via `CheckHealth()`. |
 | Graceful shutdown | `CleanupTasks` cancels the metrics updater goroutine and closes the DB connection. |
-| Observability     | Optional Prometheus metrics (pool, health, slow queries, errors); automatic tracing when lynx-tracer is integrated. |
+| Observability     | Optional Prometheus metrics (pool, health, slow queries, errors); automatic DB tracing is not available on the current sql-sdk rollback line even if lynx-tracer is loaded. |
 | Config validation | Initialization validates required `source` and constrains pool parameters (e.g. max_idle ≤ max_open). |
 
 ## Production Configuration
@@ -97,7 +97,7 @@ Construct Handlers/Services that depend on the DB during application assembly, *
 ### 2. lynx-sql-sdk dependency
 
 - Connection setup, retry, health check, and pool stats are implemented in lynx-sql-sdk base.
-- Ensure your lynx-sql-sdk version supports `OpenDBFunc` (for lynx-tracer/otelsql) and the retry/health behavior you rely on.
+- The current rollback line used by this repo does **not** expose `OpenDBFunc`, so `lynx-pgsql` cannot automatically wrap connections with otelsql today. If DB spans are a release requirement, upgrade lynx-sql-sdk first and then restore the integration in plugin code.
 - The repo’s `go.mod` uses `replace github.com/go-lynx/lynx-sql-sdk => ../lynx-sql-sdk` for local development; remove or adjust the replace when consuming the published module.
 
 ### 3. Prometheus label cardinality
@@ -129,5 +129,5 @@ Construct Handlers/Services that depend on the DB during application assembly, *
 ## Version and dependencies
 
 - Plugin version: v2.0.0
-- Dependencies: lynx, lynx-sql-sdk, pgx/v5, otelsql (optional), prometheus/client_golang
+- Dependencies: lynx, lynx-sql-sdk, pgx/v5, prometheus/client_golang
 - Before production deployment, run connection pool load tests and failure drills (e.g. DB briefly unavailable, restart) in staging to confirm retry and graceful shutdown behavior.

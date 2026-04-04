@@ -243,6 +243,11 @@ func TestDBPgsqlClient_CleanupTasks(t *testing.T) {
 	if err != nil {
 		t.Errorf("CleanupTasks failed: %v", err)
 	}
+
+	err = client.CleanupTasks()
+	if err != nil {
+		t.Errorf("second CleanupTasks should be idempotent: %v", err)
+	}
 }
 
 func TestDBPgsqlClient_GetDB(t *testing.T) {
