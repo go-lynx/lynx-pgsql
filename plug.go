@@ -25,11 +25,7 @@ const (
 type dbProvider struct{}
 
 // DBProvider resolves the current pool on each call so callers do not cache a stale *sql.DB across reconnects.
-type DBProvider interface {
-	DB(ctx context.Context) (*sql.DB, error)
-	ValidatedConn(ctx context.Context) (*sql.Conn, error)
-	Dialect() string
-}
+type DBProvider = interfaces.DBProvider
 
 // init function registers the PostgreSQL client plugin to the global plugin factory
 func init() {

@@ -72,6 +72,7 @@ func NewPgsqlClient() *DBPgsqlClient {
 		pluginPriority,
 		config,
 	)
+	c.SQLPlugin.SetProvider(dbProvider{})
 
 	return c
 }
