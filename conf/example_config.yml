@@ -8,7 +8,7 @@ lynx:
 
     # Database connection string
     # Format: postgres://username:password@host:port/database?sslmode=disable
-    source: "postgres://admin:123456@127.0.0.1:5432/demo?sslmode=disable"
+    source: ""  # Inject DSN from environment-specific config or a secret manager
 
     # Connection pool configuration
     # Minimum number of idle connections (enables pool warmup when set)
@@ -34,7 +34,7 @@ lynx:
 #  lynx:
 #   pgsql:
 #     driver: "pgx"
-#     source: "postgres://user:password@localhost:5432/mydb?sslmode=require&connect_timeout=10"
+#     source: ""  # e.g. injected postgres DSN with sslmode=require
 #     min_conn: 5
 #     max_conn: 100
 #     max_idle_time: "60s"
@@ -44,7 +44,7 @@ lynx:
 #  lynx:
 #   pgsql:
 #     driver: "pgx"
-#     source: "postgres://prod_user:secure_password@prod-db.example.com:5432/production_db?sslmode=require&connect_timeout=30&statement_timeout=30000"
+#     source: ""  # production DSN must come from a secret manager
 #     min_conn: 20
 #     max_conn: 200
 #     max_idle_time: "300s"
@@ -60,7 +60,7 @@ lynx:
 #  lynx:
 #    pgsql:
 #      driver: "pgx"
-#      source: "postgres://admin:123456@127.0.0.1:5432/demo?sslmode=disable"
+#      source: ""  # development DSN can be supplied by local-only config
 #      min_conn: 10
 #      max_conn: 50
 #      max_idle_time: "30s"

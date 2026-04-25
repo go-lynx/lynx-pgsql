@@ -49,6 +49,14 @@ func GetDB() (*sql.DB, error) {
 
 // GetDBWithContext gets the database connection with context support (timeout/cancellation).
 func GetDBWithContext(ctx context.Context) (*sql.DB, error) {
+	sqlPlugin, err := getSQLPlugin()
+	if err != nil {
+		return nil, err
+	}
+	return sqlPlugin.GetDBWithContext(ctx)
+}
+
+func getSQLPlugin() (interfaces.SQLPlugin, error) {
 	if lynx.Lynx() == nil {
 		return nil, fmt.Errorf("lynx not initialized")
 	}
@@ -57,7 +65,7 @@ func GetDBWithContext(ctx context.Context) (*sql.DB, error) {
 		return nil, fmt.Errorf("plugin %s not found", pluginName)
 	}
 	if sqlPlugin, ok := plugin.(interfaces.SQLPlugin); ok {
-		return sqlPlugin.GetDBWithContext(ctx)
+		return sqlPlugin, nil
 	}
 	return nil, fmt.Errorf("plugin %s is not a SQLPlugin", pluginName)
 }
@@ -71,22 +79,11 @@ func GetProvider() DBProvider {
 // GetValidatedConn returns a single connection from the pool that has been verified alive (Ping).
 // Use this when you need a connection guaranteed to be usable at handoff time. Caller must call conn.Close() when done.
 func GetValidatedConn(ctx context.Context) (*sql.Conn, error) {
-	db, err := GetDBWithContext(ctx)
+	sqlPlugin, err := getSQLPlugin()
 	if err != nil {
 		return nil, err
 	}
-	if db == nil {
-		return nil, fmt.Errorf("database connection is nil")
-	}
-	conn, err := db.Conn(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := conn.PingContext(ctx); err != nil {
-		_ = conn.Close()
-		return nil, err
-	}
-	return conn, nil
+	return sqlPlugin.GetValidatedConn(ctx)
 }
 
 func (dbProvider) DB(ctx context.Context) (*sql.DB, error) {
@@ -167,7 +164,7 @@ func backoff(interval time.Duration) time.Duration {
 // Use this when you need to ensure the database is reachable before proceeding, not just that the pool exists.
 // If the DB is down, this will block until ctx expires; set a reasonable timeout (e.g. 30s) on the context.
 func WaitForDBConnected(ctx context.Context) (*sql.DB, error) {
-	db, err := WaitForDB(ctx)
+	_, err := WaitForDB(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +174,15 @@ func WaitForDBConnected(ctx context.Context) (*sql.DB, error) {
 			return nil, fmt.Errorf("wait for pgsql connected: %w", err)
 		}
 		if IsConnected() {
-			return db, nil
+			currentDB, err := GetDBWithContext(ctx)
+			if err != nil {
+				sleepOrDone(ctx, interval)
+				interval = backoff(interval)
+				continue
+			}
+			if currentDB != nil {
+				return currentDB, nil
+			}
 		}
 		sleepOrDone(ctx, interval)
 		interval = backoff(interval)

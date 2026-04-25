@@ -6,6 +6,7 @@ package pgsql
 import (
 	"context"
 	"database/sql"
+	"os"
 	"testing"
 	"time"
 
@@ -235,7 +236,7 @@ func TestPostgreSQLGetDriver(t *testing.T) {
 // Helper functions
 
 func isPostgreSQLAvailable() bool {
-	db, err := sql.Open("pgx", "postgres://lynx:lynx123456@localhost:5432/lynx_test?sslmode=disable")
+	db, err := sql.Open("pgx", pgsqlIntegrationDSN())
 	if err != nil {
 		return false
 	}
@@ -256,7 +257,7 @@ func createTestRuntime(t *testing.T) plugins.Runtime {
 		values: map[string]interface{}{
 			"lynx.pgsql": &conf.Pgsql{
 				Driver:  "pgx",
-				Source:  "postgres://lynx:lynx123456@localhost:5432/lynx_test?sslmode=disable",
+				Source:  pgsqlIntegrationDSN(),
 				MinConn: 5,
 				MaxConn: 20,
 			},
@@ -268,6 +269,13 @@ func createTestRuntime(t *testing.T) plugins.Runtime {
 	rt.SetConfig(mockConfig)
 
 	return rt
+}
+
+func pgsqlIntegrationDSN() string {
+	if dsn := os.Getenv("LYNX_PGSQL_TEST_DSN"); dsn != "" {
+		return dsn
+	}
+	return "postgres://lynx:lynx-local-password@localhost:5432/lynx_test?sslmode=disable"
 }
 
 // mockConfig implements config.Config for testing
