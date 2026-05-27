@@ -9,7 +9,7 @@ replace github.com/go-lynx/lynx-sql-sdk => ../lynx-sql-sdk
 require (
 	entgo.io/ent v0.14.6
 	github.com/go-kratos/kratos/v2 v2.9.2
-	github.com/go-lynx/lynx v1.6.0-beta
+	github.com/go-lynx/lynx v1.6.1
 	github.com/go-lynx/lynx-sql-sdk v0.0.0-00010101000000-000000000000
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/prometheus/client_golang v1.23.2
