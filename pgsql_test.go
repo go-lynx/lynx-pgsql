@@ -15,7 +15,7 @@ import (
 
 // mockRuntime is a mock implementation of plugins.Runtime for testing
 type mockRuntime struct {
-	config map[string]interface{}
+	config map[string]any
 }
 
 func (m *mockRuntime) GetConfig() config.Config {
@@ -63,7 +63,7 @@ func (m *mockRuntime) UnregisterSharedResource(name string) error               
 func (m *mockRuntime) WithPluginContext(pluginName string) plugins.Runtime                    { return m }
 
 type mockConfig struct {
-	values map[string]interface{}
+	values map[string]any
 }
 
 func (m *mockConfig) Value(key string) config.Value {
@@ -80,10 +80,10 @@ func (m *mockConfig) Close() error                              { return nil }
 
 type mockValue struct {
 	key    string
-	values map[string]interface{}
+	values map[string]any
 }
 
-func (m *mockValue) Scan(dest interface{}) error {
+func (m *mockValue) Scan(dest any) error {
 	if val, ok := m.values[m.key]; ok {
 		if pbConfig, ok := dest.(*conf.Pgsql); ok {
 			if cfg, ok := val.(*conf.Pgsql); ok {
@@ -134,7 +134,7 @@ func TestDBPgsqlClient_InitializeResources(t *testing.T) {
 	}
 
 	rt := &mockRuntime{
-		config: map[string]interface{}{
+		config: map[string]any{
 			confPrefix: pbConfig,
 		},
 	}
@@ -170,7 +170,7 @@ func TestDBPgsqlClient_InitializeResources_WithDefaults(t *testing.T) {
 
 	// Test with empty config (should use defaults)
 	rt := &mockRuntime{
-		config: map[string]interface{}{
+		config: map[string]any{
 			confPrefix: &conf.Pgsql{},
 		},
 	}
@@ -196,7 +196,7 @@ func TestDBPgsqlClient_StartupTasks(t *testing.T) {
 	}
 
 	rt := &mockRuntime{
-		config: map[string]interface{}{
+		config: map[string]any{
 			confPrefix: pbConfig,
 		},
 	}
@@ -228,7 +228,7 @@ func TestDBPgsqlClient_CleanupTasks(t *testing.T) {
 	}
 
 	rt := &mockRuntime{
-		config: map[string]interface{}{
+		config: map[string]any{
 			confPrefix: pbConfig,
 		},
 	}
@@ -282,7 +282,7 @@ func TestDBPgsqlClient_GetDialect(t *testing.T) {
 	}
 
 	rt := &mockRuntime{
-		config: map[string]interface{}{
+		config: map[string]any{
 			confPrefix: pbConfig,
 		},
 	}
@@ -375,7 +375,7 @@ func TestDBPgsqlClient_ConfigurationMapping(t *testing.T) {
 			client := NewPgsqlClient()
 
 			rt := &mockRuntime{
-				config: map[string]interface{}{
+				config: map[string]any{
 					confPrefix: tt.pbConfig,
 				},
 			}
@@ -401,7 +401,7 @@ func TestDBPgsqlClient_ConcurrentAccess(t *testing.T) {
 	}
 
 	rt := &mockRuntime{
-		config: map[string]interface{}{
+		config: map[string]any{
 			confPrefix: pbConfig,
 		},
 	}
@@ -435,7 +435,7 @@ func TestDBPgsqlClient_ContextSupport(t *testing.T) {
 	}
 
 	rt := &mockRuntime{
-		config: map[string]interface{}{
+		config: map[string]any{
 			confPrefix: pbConfig,
 		},
 	}
@@ -470,7 +470,7 @@ func TestDBPgsqlClient_TimeoutHandling(t *testing.T) {
 	}
 
 	rt := &mockRuntime{
-		config: map[string]interface{}{
+		config: map[string]any{
 			confPrefix: pbConfig,
 		},
 	}
@@ -522,7 +522,7 @@ func TestDBPgsqlClient_AtomicConfigUpdate(t *testing.T) {
 	}
 
 	rt1 := &mockRuntime{
-		config: map[string]interface{}{
+		config: map[string]any{
 			confPrefix: pbConfig1,
 		},
 	}
@@ -546,7 +546,7 @@ func TestDBPgsqlClient_AtomicConfigUpdate(t *testing.T) {
 	}
 
 	rt2 := &mockRuntime{
-		config: map[string]interface{}{
+		config: map[string]any{
 			confPrefix: pbConfig2,
 		},
 	}

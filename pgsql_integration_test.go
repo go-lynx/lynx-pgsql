@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kratos/kratos/v2/config"
 	"github.com/go-lynx/lynx"
 	"github.com/go-lynx/lynx-pgsql/conf"
 	"github.com/go-lynx/lynx/plugins"
@@ -252,9 +251,10 @@ func isPostgreSQLAvailable() bool {
 }
 
 func createTestRuntime(t *testing.T) plugins.Runtime {
-	// Create a mock config
-	mockConfig := &mockConfig{
-		values: map[string]interface{}{
+	t.Helper()
+	// Use the mockRuntime defined in pgsql_test.go so we don't duplicate types.
+	rt := &mockRuntime{
+		config: map[string]any{
 			"lynx.pgsql": &conf.Pgsql{
 				Driver:  "pgx",
 				Source:  pgsqlIntegrationDSN(),
@@ -264,11 +264,12 @@ func createTestRuntime(t *testing.T) plugins.Runtime {
 		},
 	}
 
-	// Create runtime
-	rt := lynx.NewTypedRuntimePlugin()
-	rt.SetConfig(mockConfig)
-
-	return rt
+	// For integration tests we also need to wire the real Lynx runtime so that
+	// package-level helpers (GetDB, IsConnected, etc.) work. Wire the plugin
+	// into a real TypedRuntimePlugin so Lynx().GetPluginManager() can find it.
+	realRT := lynx.NewTypedRuntimePlugin()
+	realRT.SetConfig(rt.GetConfig())
+	return realRT
 }
 
 func pgsqlIntegrationDSN() string {
@@ -276,62 +277,4 @@ func pgsqlIntegrationDSN() string {
 		return dsn
 	}
 	return "postgres://lynx:lynx-local-password@localhost:5432/lynx_test?sslmode=disable"
-}
-
-// mockConfig implements config.Config for testing
-type mockConfig struct {
-	values map[string]interface{}
-}
-
-func (m *mockConfig) Value(key string) config.Value {
-	return &mockValue{key: key, values: m.values}
-}
-
-type mockValue struct {
-	key    string
-	values map[string]interface{}
-}
-
-func (m *mockValue) Scan(dest interface{}) error {
-	if val, ok := m.values[m.key]; ok {
-		if pbConfig, ok := dest.(*conf.Pgsql); ok {
-			if cfg, ok := val.(*conf.Pgsql); ok {
-				*pbConfig = *cfg
-				return nil
-			}
-		}
-	}
-	return nil
-}
-
-func (m *mockValue) String() (string, error) {
-	return "", nil
-}
-
-func (m *mockValue) Bool() (bool, error) {
-	return false, nil
-}
-
-func (m *mockValue) Int() (int64, error) {
-	return 0, nil
-}
-
-func (m *mockValue) Float() (float64, error) {
-	return 0, nil
-}
-
-func (m *mockValue) Duration() (time.Duration, error) {
-	return 0, nil
-}
-
-func (m *mockConfig) Load() error {
-	return nil
-}
-
-func (m *mockConfig) Watch(key string, o config.Observer) error {
-	return nil
-}
-
-func (m *mockConfig) Close() error {
-	return nil
 }

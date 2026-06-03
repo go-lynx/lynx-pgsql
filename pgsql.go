@@ -168,7 +168,14 @@ func (p *DBPgsqlClient) StartupTasks() error {
 
 // runPoolStatsUpdater periodically updates Prometheus connection pool metrics.
 // Updates even when not connected so dashboards show current state (e.g. zeros when DB is down).
+// A deferred recover ensures that a panic inside UpdateMetrics never silently kills the goroutine.
 func (p *DBPgsqlClient) runPoolStatsUpdater(ctx context.Context) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Errorf("pgsql runPoolStatsUpdater panic recovered: %v", r)
+		}
+	}()
+
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 	for {
