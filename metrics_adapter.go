@@ -1,3 +1,7 @@
+// Package pgsql provides a PostgreSQL client plugin for the Lynx framework.
+// It wraps database/sql with a production-grade connection pool, Prometheus metrics
+// (connection pool stats, query/transaction latency), configurable health checks, and
+// lifecycle management driven by protobuf-based configuration.
 package pgsql
 
 import (
