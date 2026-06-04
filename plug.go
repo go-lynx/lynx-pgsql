@@ -27,7 +27,7 @@ type dbProvider struct{}
 // DBProvider resolves the current pool on each call so callers do not cache a stale *sql.DB across reconnects.
 type DBProvider = interfaces.DBProvider
 
-// init function registers the PostgreSQL client plugin to the global plugin factory
+// init registers the PostgreSQL plugin with the global factory on import.
 func init() {
 	factory.GlobalTypedFactory().RegisterPlugin(pluginName, confPrefix, func() plugins.Plugin {
 		return NewPgsqlClient()
@@ -47,7 +47,7 @@ func GetDB() (*sql.DB, error) {
 	return GetDBWithContext(context.Background())
 }
 
-// GetDBWithContext gets the database connection with context support (timeout/cancellation).
+// GetDBWithContext returns the underlying *sql.DB, checked against the provided context.
 func GetDBWithContext(ctx context.Context) (*sql.DB, error) {
 	sqlPlugin, err := getSQLPlugin()
 	if err != nil {
