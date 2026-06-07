@@ -520,8 +520,10 @@ func (pm *PrometheusMetrics) buildLabels(config *conf.Pgsql) prometheus.Labels {
 		"database": "postgres",
 	}
 
-	// Extract database name from connection string
 	if config != nil && config.Source != "" {
+		if inst := pm.extractInstance(config.Source); inst != "" {
+			labels["instance"] = inst
+		}
 		if dbName := pm.extractDatabaseName(config.Source); dbName != "" {
 			labels["database"] = dbName
 		}
@@ -546,19 +548,101 @@ func cloneLabels(in prometheus.Labels) prometheus.Labels {
 	return out
 }
 
-// extractDatabaseName Extracts database name from connection string
-func (pm *PrometheusMetrics) extractDatabaseName(source string) string {
-	// Parse postgres://user:pass@host:port/dbname format
+// extractInstance extracts host:port from a PostgreSQL DSN.
+// Handles URL format (postgres://user:pass@host:port/db) and
+// key-value format (host=h port=5432 dbname=db), including single-quoted values.
+func (pm *PrometheusMetrics) extractInstance(source string) string {
 	if strings.Contains(source, "://") {
-		parts := strings.Split(source, "/")
+		rest := source[strings.Index(source, "://")+3:]
+		hostPart := strings.SplitN(rest, "/", 2)[0]
+		if at := strings.LastIndex(hostPart, "@"); at >= 0 {
+			hostPart = hostPart[at+1:]
+		}
+		if hostPart != "" {
+			return hostPart
+		}
+	} else {
+		kv := parseKVDSN(source)
+		host := kv["host"]
+		port := kv["port"]
+		if host != "" {
+			if port != "" {
+				return host + ":" + port
+			}
+			return host
+		}
+	}
+	return ""
+}
+
+// extractDatabaseName extracts database name from a PostgreSQL DSN.
+// Handles URL format (postgres://user:pass@host:port/dbname) and
+// key-value format (host=h dbname=mydb), including single-quoted values.
+func (pm *PrometheusMetrics) extractDatabaseName(source string) string {
+	if strings.Contains(source, "://") {
+		parts := strings.SplitN(source, "/", -1)
 		if len(parts) >= 2 {
 			dbPart := parts[len(parts)-1]
-			// Remove query parameters
 			if idx := strings.Index(dbPart, "?"); idx != -1 {
 				dbPart = dbPart[:idx]
 			}
 			return dbPart
 		}
+	} else {
+		return parseKVDSN(source)["dbname"]
 	}
 	return ""
+}
+
+// parseKVDSN parses a PostgreSQL key-value DSN string into a map.
+// Values may be bare (no whitespace) or single-quoted; within single quotes
+// \' is a literal single quote and \\ is a literal backslash.
+func parseKVDSN(source string) map[string]string {
+	result := make(map[string]string)
+	s := strings.TrimSpace(source)
+	for len(s) > 0 {
+		s = strings.TrimLeft(s, " \t\n\r")
+		if len(s) == 0 {
+			break
+		}
+		eqIdx := strings.IndexByte(s, '=')
+		if eqIdx < 0 {
+			break
+		}
+		key := strings.ToLower(strings.TrimSpace(s[:eqIdx]))
+		s = strings.TrimLeft(s[eqIdx+1:], " \t")
+
+		var value string
+		if len(s) > 0 && s[0] == '\'' {
+			s = s[1:]
+			var buf strings.Builder
+			for len(s) > 0 {
+				if s[0] == '\'' {
+					s = s[1:]
+					break
+				}
+				if s[0] == '\\' && len(s) > 1 {
+					buf.WriteByte(s[1])
+					s = s[2:]
+					continue
+				}
+				buf.WriteByte(s[0])
+				s = s[1:]
+			}
+			value = buf.String()
+		} else {
+			end := strings.IndexAny(s, " \t\n\r")
+			if end < 0 {
+				value = s
+				s = ""
+			} else {
+				value = s[:end]
+				s = s[end:]
+			}
+		}
+		if key != "" {
+			result[key] = value
+		}
+	}
+	return result
 }

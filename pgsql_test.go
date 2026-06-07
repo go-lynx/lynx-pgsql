@@ -561,3 +561,104 @@ func TestDBPgsqlClient_AtomicConfigUpdate(t *testing.T) {
 		t.Errorf("Expected DSN 'postgres://localhost/db2', got '%s'", client.config.DSN)
 	}
 }
+
+func TestParseKVDSN(t *testing.T) {
+	tests := []struct {
+		name   string
+		source string
+		want   map[string]string
+	}{
+		{
+			name:   "simple bare values",
+			source: "host=localhost port=5432 dbname=mydb",
+			want:   map[string]string{"host": "localhost", "port": "5432", "dbname": "mydb"},
+		},
+		{
+			name:   "single-quoted value with spaces",
+			source: "host=localhost password='my pass word' dbname=mydb",
+			want:   map[string]string{"host": "localhost", "password": "my pass word", "dbname": "mydb"},
+		},
+		{
+			name:   "escaped single quote inside quoted value",
+			source: `host=localhost password='it\'s fine' dbname=mydb`,
+			want:   map[string]string{"host": "localhost", "password": "it's fine", "dbname": "mydb"},
+		},
+		{
+			name:   "escaped backslash inside quoted value",
+			source: `host=localhost password='back\\slash' dbname=mydb`,
+			want:   map[string]string{"host": "localhost", "password": `back\slash`, "dbname": "mydb"},
+		},
+		{
+			name:   "key=value with surrounding spaces",
+			source: " host = myserver  port = 5433 ",
+			want:   map[string]string{"host": "myserver", "port": "5433"},
+		},
+		{
+			name:   "empty string",
+			source: "",
+			want:   map[string]string{},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := parseKVDSN(tc.source)
+			for k, v := range tc.want {
+				if got[k] != v {
+					t.Errorf("key %q: got %q, want %q", k, got[k], v)
+				}
+			}
+		})
+	}
+}
+
+func TestExtractInstanceAndDatabase_Pgsql(t *testing.T) {
+	pm := &PrometheusMetrics{}
+	tests := []struct {
+		name     string
+		source   string
+		wantInst string
+		wantDB   string
+	}{
+		{
+			name:     "URL format",
+			source:   "postgres://user:pass@myhost:5432/mydb",
+			wantInst: "myhost:5432",
+			wantDB:   "mydb",
+		},
+		{
+			name:     "URL format no port",
+			source:   "postgres://myhost/mydb",
+			wantInst: "myhost",
+			wantDB:   "mydb",
+		},
+		{
+			name:     "key-value bare",
+			source:   "host=myhost port=5432 dbname=mydb",
+			wantInst: "myhost:5432",
+			wantDB:   "mydb",
+		},
+		{
+			name:     "key-value quoted password with spaces",
+			source:   "host=myhost port=5432 password='p w d' dbname=mydb",
+			wantInst: "myhost:5432",
+			wantDB:   "mydb",
+		},
+		{
+			name:     "key-value no port",
+			source:   "host=myhost dbname=mydb",
+			wantInst: "myhost",
+			wantDB:   "mydb",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := pm.extractInstance(tc.source); got != tc.wantInst {
+				t.Errorf("extractInstance(%q) = %q, want %q", tc.source, got, tc.wantInst)
+			}
+			if got := pm.extractDatabaseName(tc.source); got != tc.wantDB {
+				t.Errorf("extractDatabaseName(%q) = %q, want %q", tc.source, got, tc.wantDB)
+			}
+		})
+	}
+}

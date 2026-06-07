@@ -3,10 +3,8 @@
 package pgsql
 
 import (
-	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/go-lynx/lynx"
 	"github.com/go-lynx/lynx-pgsql/conf"
@@ -35,10 +33,9 @@ const (
 // DBPgsqlClient represents PostgreSQL client plugin instance
 type DBPgsqlClient struct {
 	*base.SQLPlugin
-	config            *interfaces.Config
-	pbConfig          *conf.Pgsql // protobuf configuration
+	config           *interfaces.Config
+	pbConfig         *conf.Pgsql // protobuf configuration
 	prometheusMetrics *PrometheusMetrics
-	metricsCancel     context.CancelFunc // stop periodic pool stats update
 }
 
 // NewPgsqlClient creates a new PostgreSQL client plugin instance
@@ -77,10 +74,10 @@ func NewPgsqlClient() *DBPgsqlClient {
 	return c
 }
 
-// InitializeResources loads protobuf configuration and initializes resources.
-// We set p.config from proto first; base.InitializeResources(rt) is then called and
-// will Scan(p.config) again—ensure your config source can fill interfaces.Config
-// (e.g. same keys as Config) so base validation passes and proto values are not lost.
+// InitializeResources loads protobuf configuration and initialises the base plugin.
+// Config is loaded exclusively from the proto schema (source, max_conn, min_conn …).
+// The base plugin's config scan is intentionally skipped via InitializeFromConfig so
+// that proto values cannot be overwritten by a second scan of the same YAML key.
 func (p *DBPgsqlClient) InitializeResources(rt plugins.Runtime) error {
 	pbConfig := &conf.Pgsql{}
 	if err := rt.GetConfig().Value(confPrefix).Scan(pbConfig); err != nil {
@@ -92,7 +89,7 @@ func (p *DBPgsqlClient) InitializeResources(rt plugins.Runtime) error {
 		return fmt.Errorf("postgresql source (DSN) is required")
 	}
 
-	// Apply proto to shared config before base runs (base may overwrite via Scan)
+	// Map proto config fields onto interfaces.Config before base runs.
 	if pbConfig.Driver != "" {
 		p.config.Driver = pbConfig.Driver
 	}
@@ -125,13 +122,13 @@ func (p *DBPgsqlClient) InitializeResources(rt plugins.Runtime) error {
 		p.config.ConnMaxIdleTime = int(pbConfig.MaxIdleTime.AsDuration().Seconds())
 	}
 
-	// lynx-sql-sdk v1.5.0 does not expose OpenDBFunc, so automatic otelsql wrapping must wait
-	// for the sql-sdk line to roll forward again. Keep runtime detection to surface the limitation.
 	if lynx.Lynx() != nil && lynx.Lynx().GetPluginManager().GetPlugin(tracerPluginName) != nil {
-		log.Warnf("pgsql: lynx-tracer detected, but sql-sdk v1.5.0 lacks OpenDBFunc; automatic DB tracing is disabled in the rollback line")
+		log.Warnf("pgsql: lynx-tracer detected, but sql-sdk lacks OpenDBFunc; automatic DB tracing is disabled")
 	}
 
-	if err := p.SQLPlugin.InitializeResources(rt); err != nil {
+	// InitializeFromConfig applies defaults+validation without re-scanning the same
+	// YAML key, preventing proto values from being silently overwritten.
+	if err := p.SQLPlugin.InitializeFromConfig(rt); err != nil {
 		return err
 	}
 
@@ -154,51 +151,13 @@ func (p *DBPgsqlClient) StartupTasks() error {
 		return err
 	}
 
-	// When Prometheus is enabled, periodically push connection pool stats to metrics
-	if p.prometheusMetrics != nil {
-		ctx, cancel := context.WithCancel(context.Background())
-		p.metricsCancel = cancel
-		go p.runPoolStatsUpdater(ctx)
-	}
-
 	log.Infof("pgsql database successfully initialized with connection pool: max_open=%d, max_idle=%d",
 		p.config.MaxOpenConns, p.config.MaxIdleConns)
 	return nil
 }
 
-// runPoolStatsUpdater periodically updates Prometheus connection pool metrics.
-// Updates even when not connected so dashboards show current state (e.g. zeros when DB is down).
-// A deferred recover ensures that a panic inside UpdateMetrics never silently kills the goroutine.
-func (p *DBPgsqlClient) runPoolStatsUpdater(ctx context.Context) {
-	defer func() {
-		if r := recover(); r != nil {
-			log.Errorf("pgsql runPoolStatsUpdater panic recovered: %v", r)
-		}
-	}()
-
-	ticker := time.NewTicker(15 * time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			if p.prometheusMetrics != nil && p.SQLPlugin != nil {
-				stats := p.SQLPlugin.GetStats()
-				if stats != nil {
-					p.prometheusMetrics.UpdateMetrics(stats, p.pbConfig)
-				}
-			}
-		}
-	}
-}
-
 // CleanupTasks gracefully closes database connection
 func (p *DBPgsqlClient) CleanupTasks() error {
-	if p.metricsCancel != nil {
-		p.metricsCancel()
-		p.metricsCancel = nil
-	}
 	log.Infof("closing pgsql database connection")
 	err := p.SQLPlugin.CleanupTasks()
 	if errors.Is(err, base.ErrAlreadyClosed) {
