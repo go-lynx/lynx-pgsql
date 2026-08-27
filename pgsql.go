@@ -3,6 +3,7 @@
 package pgsql
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -33,8 +34,8 @@ const (
 // DBPgsqlClient represents PostgreSQL client plugin instance
 type DBPgsqlClient struct {
 	*base.SQLPlugin
-	config           *interfaces.Config
-	pbConfig         *conf.Pgsql // protobuf configuration
+	config            *interfaces.Config
+	pbConfig          *conf.Pgsql // protobuf configuration
 	prometheusMetrics *PrometheusMetrics
 }
 
@@ -143,11 +144,23 @@ func (p *DBPgsqlClient) InitializeResources(rt plugins.Runtime) error {
 	return nil
 }
 
-// StartupTasks initializes database connection
+// StartupTasks initializes database connection (legacy, non-cancellable
+// entrypoint; delegates to StartupTasksContext).
 func (p *DBPgsqlClient) StartupTasks() error {
+	return p.StartupTasksContext(context.Background())
+}
+
+// StartupTasksContext initializes the database connection while honoring ctx.
+// The connect/ping/retry work in the embedded SQLPlugin is bound to ctx, and the
+// metrics updater is only started once the connection was established.
+func (p *DBPgsqlClient) StartupTasksContext(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("pgsql startup canceled before execution: %w", err)
+	}
+
 	log.Infof("initializing pgsql database connection")
 
-	if err := p.SQLPlugin.StartupTasks(); err != nil {
+	if err := p.SQLPlugin.StartupTasksContext(ctx); err != nil {
 		return err
 	}
 
@@ -156,10 +169,19 @@ func (p *DBPgsqlClient) StartupTasks() error {
 	return nil
 }
 
-// CleanupTasks gracefully closes database connection
+// CleanupTasks gracefully closes database connection (legacy, non-cancellable
+// entrypoint; delegates to CleanupTasksContext).
 func (p *DBPgsqlClient) CleanupTasks() error {
+	return p.CleanupTasksContext(context.Background())
+}
+
+// CleanupTasksContext gracefully closes the database connection while honoring ctx.
+func (p *DBPgsqlClient) CleanupTasksContext(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("pgsql cleanup canceled before execution: %w", err)
+	}
 	log.Infof("closing pgsql database connection")
-	err := p.SQLPlugin.CleanupTasks()
+	err := p.SQLPlugin.CleanupTasksContext(ctx)
 	if errors.Is(err, base.ErrAlreadyClosed) {
 		return nil
 	}
